@@ -48,8 +48,8 @@ fn get_args() -> clap::App<'static, 'static> {
         .arg(Arg::with_name("cell_barcodes")
              .short("c")
              .long("cell-barcodes")
-             .value_name("FILE")
-             .help("File with cell barcodes to be extracted.")
+             .value_name("STRING")
+             .help("Str of cell barcodes to be extracted.")
              .required(true))
         .arg(Arg::with_name("out_bam")
              .short("o")
@@ -113,9 +113,12 @@ fn main() {
 fn _main(cli_args: Vec<String>) {
     let args = get_args().get_matches_from(cli_args);
     let bam_file = args.value_of("bam").expect("You must provide a BAM file");
+    // let cell_barcodes = args
+    //     .value_of("cell_barcodes")
+    //     .expect("You must provide a cell barcodes file");
     let cell_barcodes = args
         .value_of("cell_barcodes")
-        .expect("You must provide a cell barcodes file");
+        .expect("You must provide a cell barcode");
     let out_bam_file = args
         .value_of("out_bam")
         .expect("You must provide a path to write the new BAM file");
@@ -139,7 +142,12 @@ fn _main(cli_args: Vec<String>) {
     let _ = SimpleLogger::init(ll, Config::default());
 
     check_inputs_exist(bam_file, cell_barcodes, out_bam_file);
-    let cell_barcodes = load_barcodes(&cell_barcodes).unwrap();
+
+    //
+    //
+    let seq = cell_barcodes?.into_bytes()
+    let mut bc_set = HashSet::new();
+    let cell_barcodes = bc_set.insert(seq);//load_barcodes(&cell_barcodes).unwrap();
     let tmp_dir = tempdir().unwrap();
     let virtual_offsets = bgzf_noffsets(&bam_file, &cores).unwrap();
 
@@ -455,7 +463,7 @@ mod tests {
             "-b",
             "test/test.bam",
             "-c",
-            "test/barcodes.csv",
+            "AACCATGAGTGTGAAT-1",
             "-o",
             out_file,
             "--cores",
