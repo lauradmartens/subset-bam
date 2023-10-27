@@ -116,7 +116,7 @@ fn _main(cli_args: Vec<String>) {
     // let cell_barcodes = args
     //     .value_of("cell_barcodes")
     //     .expect("You must provide a cell barcodes file");
-    let cell_barcodes = args
+    let barcode = args
         .value_of("cell_barcodes")
         .expect("You must provide a cell barcode");
     let out_bam_file = args
@@ -141,13 +141,19 @@ fn _main(cli_args: Vec<String>) {
     };
     let _ = SimpleLogger::init(ll, Config::default());
 
-    check_inputs_exist(bam_file, cell_barcodes, out_bam_file);
+    //check_inputs_exist(bam_file, barcode, out_bam_file);
 
     //
     //
-    let seq = cell_barcodes?.into_bytes()
-    let mut bc_set = HashSet::new();
-    let cell_barcodes = bc_set.insert(seq);//load_barcodes(&cell_barcodes).unwrap();
+    
+    
+    let seq = barcode.to_string();
+    println!("{:?}", seq);
+    let bytes = seq.as_bytes().to_vec();
+
+    let mut cell_barcodes = HashSet::new();
+    cell_barcodes.insert(bytes);
+
     let tmp_dir = tempdir().unwrap();
     let virtual_offsets = bgzf_noffsets(&bam_file, &cores).unwrap();
 
@@ -194,10 +200,10 @@ fn _main(cli_args: Vec<String>) {
         tmp_bams.push(&c.out_bam_file);
     }
 
-    if metrics.kept_reads == 0 {
-        error!("Zero alignments were kept. Does your BAM contain the cell barcodes and/or tag you chose?");
-        process::exit(2);
-    }
+    // if metrics.kept_reads == 0 {
+    //     error!("Zero alignments were kept. Does your BAM contain the cell barcodes and/or tag you chose?");
+    //     process::exit(2);
+    // }
 
     // just copy the temp file over
     if cores == 1 {
