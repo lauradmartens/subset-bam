@@ -148,7 +148,6 @@ fn _main(cli_args: Vec<String>) {
     
     
     let seq = barcode.to_string();
-    println!("{:?}", seq);
     let bytes = seq.as_bytes().to_vec();
 
     let mut cell_barcodes = HashSet::new();
@@ -290,12 +289,12 @@ pub fn load_barcodes(filename: impl AsRef<Path>) -> Result<HashSet<Vec<u8>>, Err
 }
 
 pub fn get_cell_barcode(rec: &Record, bam_tag: &str) -> Option<Vec<u8>> {
-    //println!("{:?}", rec.aux(bam_tag.as_bytes()));
     match rec.aux(bam_tag.as_bytes()) {
         Some(Aux::String(hp)) => {
             let cb = hp.to_vec();
             Some(cb)
         }
+        Some(Aux::Integer(i)) => Some(i.to_string().into_bytes()),
         _ => None,
     }
 }
@@ -402,6 +401,7 @@ pub fn slice_bam_chunk(args: &ChunkArgs) -> ChunkOuts {
     for r in bam.iter_chunk(args.virtual_start, args.virtual_stop) {
         let rec = r.unwrap();
         metrics.total_reads += 1;
+        
         let barcode = get_cell_barcode(&rec, &args.bam_tag);
         if barcode.is_some() {
             metrics.barcoded_reads += 1;
@@ -483,7 +483,39 @@ mod tests {
         let d = HEXUPPER.encode(d.as_ref());
         assert_eq!(
             d,
-            "65061704E9C15BFC8FECF07D1DE527AF666E7623525262334C3FDC62F366A69E"
+            "0E1ED823D16CB33A26D164DBB5E0D36A5D5E70045D99DFF96E61C24AC68CEB3C"
+        );
+    }
+
+
+    #[test]
+    fn test_bam_tag() {
+        let mut cmds = Vec::new();
+        let tmp_dir = tempdir().unwrap();
+        let out_file = tmp_dir.path().join("result.bam");
+        let out_file = out_file.to_str().unwrap();
+        for l in &[
+            "subset-bam",
+            "-b",
+            "test/test.bam",
+            "-c",
+            "1",
+            "-o",
+            out_file,
+            "--cores",
+            "1",
+            "--bam-tag",
+            "NM",
+        ] {
+            cmds.push(l.to_string());
+        }
+        _main(cmds);
+        let fh = fs::File::open(&out_file).unwrap();
+        let d = sha256_digest(fh).unwrap();
+        let d = HEXUPPER.encode(d.as_ref());
+        assert_eq!(
+            d,
+            "5CC47E8CEB026EFCF43D1108BAD1CD8534341E1A1CCBB6D9C43A547FEE759CFF"
         );
     }
 }
