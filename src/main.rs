@@ -48,8 +48,8 @@ fn get_args() -> clap::App<'static, 'static> {
         .arg(Arg::with_name("cell_barcodes")
              .short("c")
              .long("cell-barcodes")
-             .value_name("FILE")
-             .help("File with cell barcodes to be extracted.")
+             .value_name("STRING")
+             .help("Str of cell barcodes to be extracted.")
              .required(true))
         .arg(Arg::with_name("out_bam")
              .short("o")
@@ -70,7 +70,12 @@ fn get_args() -> clap::App<'static, 'static> {
         .arg(Arg::with_name("bam_tag")
              .long("bam-tag")
              .default_value("CB")
-             .help("Change from default value (CB) to subset alignments based on alternative tags."));
+             .help("Change from default value (CB) to subset alignments based on alternative tags."))
+        .arg(Arg::with_name("pa")
+            .long("pa")
+            .value_name("FLOAT")
+            .help("Filter flag 'pa' with value greater than 0")
+            .takes_value(true));
     args
 }
 
@@ -94,6 +99,7 @@ pub struct ChunkArgs<'a> {
     bam_tag: String,
     virtual_start: Option<i64>,
     virtual_stop: Option<i64>,
+    pa_threshold: i64,
 }
 
 pub struct ChunkOuts {
@@ -113,9 +119,12 @@ fn main() {
 fn _main(cli_args: Vec<String>) {
     let args = get_args().get_matches_from(cli_args);
     let bam_file = args.value_of("bam").expect("You must provide a BAM file");
-    let cell_barcodes = args
+    // let cell_barcodes = args
+    //     .value_of("cell_barcodes")
+    //     .expect("You must provide a cell barcodes file");
+    let barcode = args
         .value_of("cell_barcodes")
-        .expect("You must provide a cell barcodes file");
+        .expect("You must provide a cell barcode");
     let out_bam_file = args
         .value_of("out_bam")
         .expect("You must provide a path to write the new BAM file");
@@ -126,6 +135,11 @@ fn _main(cli_args: Vec<String>) {
         .parse::<u64>()
         .expect("Failed to convert cores to integer");
     let bam_tag = args.value_of("bam_tag").unwrap_or_default().to_string();
+    let pa_threshold = args.value_of("pa")
+                       .unwrap_or("-1")
+                       .parse::<i64>()
+                       .expect("Failed to convert 'pa' to a integer");
+
 
     let ll = match ll {
         "info" => LevelFilter::Info,
@@ -138,8 +152,17 @@ fn _main(cli_args: Vec<String>) {
     };
     let _ = SimpleLogger::init(ll, Config::default());
 
-    check_inputs_exist(bam_file, cell_barcodes, out_bam_file);
-    let cell_barcodes = load_barcodes(&cell_barcodes).unwrap();
+    //check_inputs_exist(bam_file, barcode, out_bam_file);
+
+    //
+    //
+    
+    let seq = barcode.to_string();
+    let bytes = seq.as_bytes().to_vec();
+
+    let mut cell_barcodes = HashSet::new();
+    cell_barcodes.insert(bytes);
+
     let tmp_dir = tempdir().unwrap();
     let virtual_offsets = bgzf_noffsets(&bam_file, &cores).unwrap();
 
@@ -153,6 +176,7 @@ fn _main(cli_args: Vec<String>) {
             bam_tag: bam_tag.clone(),
             virtual_start: *virtual_start,
             virtual_stop: *virtual_stop,
+            pa_threshold: pa_threshold,
         };
         chunks.push(c);
     }
@@ -186,10 +210,10 @@ fn _main(cli_args: Vec<String>) {
         tmp_bams.push(&c.out_bam_file);
     }
 
-    if metrics.kept_reads == 0 {
-        error!("Zero alignments were kept. Does your BAM contain the cell barcodes and/or tag you chose?");
-        process::exit(2);
-    }
+    // if metrics.kept_reads == 0 {
+    //     error!("Zero alignments were kept. Does your BAM contain the cell barcodes and/or tag you chose?");
+    //     process::exit(2);
+    // }
 
     // just copy the temp file over
     if cores == 1 {
@@ -276,12 +300,12 @@ pub fn load_barcodes(filename: impl AsRef<Path>) -> Result<HashSet<Vec<u8>>, Err
 }
 
 pub fn get_cell_barcode(rec: &Record, bam_tag: &str) -> Option<Vec<u8>> {
-    //println!("{:?}", rec.aux(bam_tag.as_bytes()));
     match rec.aux(bam_tag.as_bytes()) {
         Some(Aux::String(hp)) => {
             let cb = hp.to_vec();
             Some(cb)
         }
+        Some(Aux::Integer(i)) => Some(i.to_string().into_bytes()),
         _ => None,
     }
 }
@@ -388,6 +412,17 @@ pub fn slice_bam_chunk(args: &ChunkArgs) -> ChunkOuts {
     for r in bam.iter_chunk(args.virtual_start, args.virtual_stop) {
         let rec = r.unwrap();
         metrics.total_reads += 1;
+        
+
+        let pa_value = rec.aux(b"pa").map_or(0, |aux| aux.integer());
+
+    
+
+        // Skip the record if 'pa' value is less than or equal to the threshold
+        if pa_value < args.pa_threshold {
+            continue;
+        }
+
         let barcode = get_cell_barcode(&rec, &args.bam_tag);
         if barcode.is_some() {
             metrics.barcoded_reads += 1;
@@ -455,7 +490,7 @@ mod tests {
             "-b",
             "test/test.bam",
             "-c",
-            "test/barcodes.csv",
+            "AACCATGAGTGTGAAT-1",
             "-o",
             out_file,
             "--cores",
@@ -469,7 +504,72 @@ mod tests {
         let d = HEXUPPER.encode(d.as_ref());
         assert_eq!(
             d,
-            "65061704E9C15BFC8FECF07D1DE527AF666E7623525262334C3FDC62F366A69E"
+            "0E1ED823D16CB33A26D164DBB5E0D36A5D5E70045D99DFF96E61C24AC68CEB3C"
+        );
+    }
+
+
+    #[test]
+    fn test_bam_tag() {
+        let mut cmds = Vec::new();
+        let tmp_dir = tempdir().unwrap();
+        let out_file = tmp_dir.path().join("result.bam");
+        let out_file = out_file.to_str().unwrap();
+        for l in &[
+            "subset-bam",
+            "-b",
+            "test/test.bam",
+            "-c",
+            "1",
+            "-o",
+            out_file,
+            "--cores",
+            "1",
+            "--bam-tag",
+            "NM",
+        ] {
+            cmds.push(l.to_string());
+        }
+        _main(cmds);
+        let fh = fs::File::open(&out_file).unwrap();
+        let d = sha256_digest(fh).unwrap();
+        let d = HEXUPPER.encode(d.as_ref());
+        assert_eq!(
+            d,
+            "5CC47E8CEB026EFCF43D1108BAD1CD8534341E1A1CCBB6D9C43A547FEE759CFF"
+        );
+    }
+
+    #[test]
+    fn test_pa_tag() {
+        let mut cmds = Vec::new();
+        let tmp_dir = tempdir().unwrap();
+        let out_file = tmp_dir.path().join("result.bam");
+        let out_file = out_file.to_str().unwrap();
+        for l in &[
+            "subset-bam",
+            "-b",
+            "test/test.bam",
+            "-c",
+            "1",
+            "-o",
+            out_file,
+            "--cores",
+            "1",
+            "--bam-tag",
+            "NM",
+            "--pa",
+            "1",
+        ] {
+            cmds.push(l.to_string());
+        }
+        _main(cmds);
+        let fh = fs::File::open(&out_file).unwrap();
+        let d = sha256_digest(fh).unwrap();
+        let d = HEXUPPER.encode(d.as_ref());
+        assert_eq!(
+            d,
+            "5CC47E8CEB026EFCF43D1108BAD1CD8534341E1A1CCBB6D9C43A547FEE759CFF"
         );
     }
 }
