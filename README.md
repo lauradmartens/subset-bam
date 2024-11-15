@@ -1,3 +1,9 @@
+> [!NOTE]    
+> We have now implemented the xf flag filtering in SnapATAC2-scooby: 
+> - pypi: https://pypi.org/project/snapatac2-scooby/
+> - GitHub: https://github.com/lauradmartens/SnapATAC2
+_______
+
 # subset-bam
 
 `subset-bam` is a tool to subset a 10x Genomics BAM file based on a tag, most commonly the cell barcode tag. The latest version is `v1.1.0` and can be found [on the releases page](https://github.com/10XGenomics/subset-bam/releases).
