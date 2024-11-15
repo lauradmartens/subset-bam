@@ -1,4 +1,4 @@
-> [!NOTE]    
+> [!IMPORTANT]    
 > We have now implemented the xf flag filtering in SnapATAC2-scooby: 
 > - pypi: https://pypi.org/project/snapatac2-scooby/
 > - GitHub: https://github.com/lauradmartens/SnapATAC2
